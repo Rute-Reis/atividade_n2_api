@@ -649,26 +649,72 @@ def listar_ta_fechados(
 
 
 
+# ---------- ROTA: TA UNIFICADO (não detalhado) ----------
+# ------- GET /atividade-n2/ta-ativos-fechados
 
-# ---------- ROTA: TA UNIFICADO ----------
-# ------- GET https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados
 @router.get(
     "/ta-ativos-fechados"
 )
 def listar_ta_unificado(
-    data_inicio: date = Query(
-        ...,
-        description="Data inicial (YYYY-MM-DD)"
-    ),
-    data_fim: date = Query(
-        ...,
-        description="Data final (YYYY-MM-DD)"
-    ),
+    ano: int = Query(..., description="Ano obrigatório"),
+    mes: Optional[int] = Query(None, ge=1, le=12),
+    dia: Optional[int] = Query(None, ge=1, le=31),
     db: Session = Depends(get_db)
 ):
 
-    dados_query = text("""
-        SELECT *
+    filtros = [
+        "YEAR(data_entrada_n2) = :ano"
+    ]
+
+    params = {
+        "ano": ano
+    }
+
+    if mes is not None:
+        filtros.append(
+            "MONTH(data_entrada_n2) = :mes"
+        )
+        params["mes"] = mes
+
+    if dia is not None:
+        filtros.append(
+            "DAY(data_entrada_n2) = :dia"
+        )
+        params["dia"] = dia
+
+    where_clause = " AND ".join(filtros)
+
+    dados_query = text(f"""
+        SELECT
+            origem,
+            ta_raiz,
+            status,
+            site,
+            uf,
+            regional,
+            data_criacao,
+            data_encerramento,
+            tipo_bilhete,
+            tipo_site,
+            tipo_de_alarme,
+            grupo_responsavel,
+            passou_pelo_acesso_ericson,
+            passou_pelo_acesso_huawei,
+            passou_pelo_campo,
+            passou_pelo_coran,
+            grupo_n2,
+            usuario_atuacao,
+            data_entrada_n2,
+            data_saida_n2,
+            teve_atuacao,
+            ainda_na_fila,
+            inicio_atuacao,
+            tempo_no_grupo,
+            tma_n2,
+            tempo_total_atuacao,
+            quantidade_atuacao,
+            tempo_total_n2,
+            origem_tabela
         FROM (
 
             SELECT
@@ -685,19 +731,15 @@ def listar_ta_unificado(
 
         ) t
 
-        WHERE data_criacao >= :data_inicio
-          AND data_criacao < DATE_ADD(:data_fim, INTERVAL 1 DAY)
+        WHERE {where_clause}
 
-        ORDER BY data_criacao DESC
+        ORDER BY data_entrada_n2 DESC
     """)
 
     registros = (
         db.execute(
             dados_query,
-            {
-                "data_inicio": data_inicio,
-                "data_fim": data_fim
-            }
+            params
         )
         .mappings()
         .all()
@@ -707,10 +749,96 @@ def listar_ta_unificado(
         dict(row)
         for row in registros
     ]
-#buscar por ano: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-01-01&data_fim=2026-12-31
-#buscar por mês específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-01&data_fim=2026-07-31
-#buscar por dia específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-15&data_fim=2026-07-15
-#buscar por semana específica: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-11&data_fim=2026-07-17
+#buscar por ano: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026
+#buscar por mês específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026&mes=7
+#buscar por dia específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026&mes=7&dia=15
+
+
+
+# # ---------- ROTA: TA UNIFICADO (detalhado dia-mes-ano ----------
+# # ------- GET https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados
+# @router.get(
+#     "/ta-ativos-fechados"
+# )
+# def listar_ta_unificado(
+#     data_inicio: date = Query(
+#         ...,
+#         description="Data inicial (YYYY-MM-DD)"
+#     ),
+#     data_fim: date = Query(
+#         ...,
+#         description="Data final (YYYY-MM-DD)"
+#     ),
+#     db: Session = Depends(get_db)
+# ):
+
+#     dados_query = text("""
+#         SELECT 
+#             origem,
+#             ta_raiz,
+#             status,
+#             site,
+#             uf,
+#             regional,
+#             data_criacao,
+#             data_encerramento,
+#             tipo_bilhete,
+#             tipo_site,
+#             tipo_de_alarme,
+#             grupo_responsavel,
+#             passou_pelo_acesso_ericson,
+#             passou_pelo_acesso_huawei,
+#             passou_pelo_campo,
+#             passou_pelo_coran,
+#             grupo_n2,
+#             usuario_atuacao,
+#             data_entrada_n2,
+#             data_saida_n2,
+#             teve_atuacao,
+#             ainda_na_fila,
+#             inicio_atuacao,
+#             tempo_no_grupo,
+#             tma_n2,
+#             tempo_total_atuacao,
+#             quantidade_atuacao,
+#             tempo_total_n2,
+#             origem_tabela
+#         FROM (
+#             SELECT DISTINCT
+#                 *,
+#                 'ATIVO' AS origem_tabela
+#             FROM TBL_ACOMPANHAMENTO_N2_ATIVOS
+#             UNION ALL
+#             SELECT DISTINCT
+#                 *,
+#                 'FECHADO' AS origem_tabela
+#             FROM TBL_ACOMPANHAMENTO_N2_FECHADO
+#         ) t
+#         WHERE data_entrada_n2 >= :data_inicio
+#           AND data_entrada_n2 < DATE_ADD(:data_fim, INTERVAL 1 DAY)
+#         ORDER BY data_entrada_n2 DESC
+#     """)
+
+#     registros = (
+#         db.execute(
+#             dados_query,
+#             {
+#                 "data_inicio": data_inicio,
+#                 "data_fim": data_fim
+#             }
+#         )
+#         .mappings()
+#         .all()
+#     )
+
+#     return [
+#         dict(row)
+#         for row in registros
+#     ]
+# #buscar por ano: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-01-01&data_fim=2026-12-31
+# #buscar por mês específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-01&data_fim=2026-07-31
+# #buscar por dia específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-15&data_fim=2026-07-15
+# #buscar por semana específica: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-11&data_fim=2026-07-17
 
 
 
@@ -753,6 +881,7 @@ def listar_ta_unificado(
 #     )
 
 #     return [dict(row) for row in registros]
+
 
 
 
