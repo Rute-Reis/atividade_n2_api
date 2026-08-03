@@ -443,6 +443,11 @@ n2_consolidado_ativos
 n2_consolidado_ativos.to_sql(name='TBL_ACOMPANHAMENTO_N2_ATIVOS', con=engine_noc,if_exists='replace', index=False)
 
 
+with engine_noc.connect() as connection:
+    setAtualizacao = text("UPDATE NOC.TBL_UPDATE_SCRIPTS SET DATA_UPDATE = DATE_FORMAT(NOW(), '%d-%m-%Y %H:%i') WHERE NOME_SCRIPT = 'ACOMPANHAMENTO_N2'")
+    connection.execute(setAtualizacao)
+    connection.commit()
+
 
 # #OTIMIZAÇÃO DE EXECUÇÃO DO SELECT PARA PEGAR PERIODOS
 # from datetime import datetime, timedelta
@@ -852,3 +857,5 @@ n2_consolidado_fechados
 # n2_consolidado_fechados.to_excel("ACOMPANHAMENTO_N2_v3.xlsx", index=False)
 
 n2_consolidado_fechados.to_sql(name='TBL_ACOMPANHAMENTO_N2_FECHADO', con=engine_noc,if_exists='append', index=False)
+
+
