@@ -12,7 +12,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, date
 
 
 from .app.database import get_db
@@ -650,14 +650,20 @@ def listar_ta_fechados(
 
 
 
-
 # ---------- ROTA: TA UNIFICADO ----------
-# ------- GET /atividade-n2/ta-ativos-fechados
-
+# ------- GET https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados
 @router.get(
     "/ta-ativos-fechados"
 )
 def listar_ta_unificado(
+    data_inicio: date = Query(
+        ...,
+        description="Data inicial (YYYY-MM-DD)"
+    ),
+    data_fim: date = Query(
+        ...,
+        description="Data final (YYYY-MM-DD)"
+    ),
     db: Session = Depends(get_db)
 ):
 
@@ -679,16 +685,74 @@ def listar_ta_unificado(
 
         ) t
 
+        WHERE data_criacao >= :data_inicio
+          AND data_criacao < DATE_ADD(:data_fim, INTERVAL 1 DAY)
+
         ORDER BY data_criacao DESC
     """)
 
     registros = (
-        db.execute(dados_query)
+        db.execute(
+            dados_query,
+            {
+                "data_inicio": data_inicio,
+                "data_fim": data_fim
+            }
+        )
         .mappings()
         .all()
     )
 
-    return [dict(row) for row in registros]
+    return [
+        dict(row)
+        for row in registros
+    ]
+#buscar por ano: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-01-01&data_fim=2026-12-31
+#buscar por mês específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-01&data_fim=2026-07-31
+#buscar por dia específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-15&data_fim=2026-07-15
+#buscar por semana específica: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?data_inicio=2026-07-11&data_fim=2026-07-17
+
+
+
+
+# # ---------- ROTA: TA UNIFICADO ----------
+# # ------- GET https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados
+
+# @router.get(
+#     "/ta-ativos-fechados"
+# )
+# def listar_ta_unificado(
+#     db: Session = Depends(get_db)
+# ):
+
+#     dados_query = text("""
+#         SELECT *
+#         FROM (
+
+#             SELECT
+#                 *,
+#                 'ATIVO' AS origem_tabela
+#             FROM TBL_ACOMPANHAMENTO_N2_ATIVOS
+
+#             UNION ALL
+
+#             SELECT
+#                 *,
+#                 'FECHADO' AS origem_tabela
+#             FROM TBL_ACOMPANHAMENTO_N2_FECHADO
+
+#         ) t
+
+#         ORDER BY data_criacao DESC
+#     """)
+
+#     registros = (
+#         db.execute(dados_query)
+#         .mappings()
+#         .all()
+#     )
+
+#     return [dict(row) for row in registros]
 
 
 
@@ -705,75 +769,65 @@ def dashboard_volumetria(
 
     query = text("""
             WITH ANALITICO AS (
-    SELECT *,
-    CASE WHEN MAX(CASE WHEN TEVE_ATUACAO = 'SIM' THEN 1 ELSE 0 END)
-    	OVER(PARTITION BY ORIGEM) = 1
-    THEN 'SIM'
-    ELSE 'NAO'
-    END AS CLASSIFICACAO_TEVE_ATUACAO
+    SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_ATIVOS
     UNION ALL
-    SELECT *,
-    CASE WHEN MAX(CASE WHEN TEVE_ATUACAO = 'SIM' THEN 1 ELSE 0 END)
-    	OVER(PARTITION BY ORIGEM) = 1
-    THEN 'SIM'
-    ELSE 'NAO'
-    END AS CLASSIFICACAO_TEVE_ATUACAO
+    SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_FECHADO
 )
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
-    LPAD(CAST(MONTH(DATA_CRIACAO) AS CHAR), 2,'0') AS MES,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
+    LPAD(CAST(MONTH(DATA_ENTRADA_N2) AS CHAR), 2,'0') AS MES,
     '' AS SEMANA,
     '' AS DIA,
     '' AS HORA,
     'ANO_MES' AS VISAO,
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO AS TEVE_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    TEVE_ATUACAO,
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    LPAD(CAST(MONTH(DATA_CRIACAO) AS CHAR), 2,'0'),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    LPAD(CAST(MONTH(DATA_ENTRADA_N2) AS CHAR), 2,'0'),
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO
+    TEVE_ATUACAO
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
-    CAST(WEEK(DATA_CRIACAO, 1) AS CHAR) AS SEMANA,
+    CAST(WEEK(DATA_ENTRADA_N2, 1) AS CHAR) AS SEMANA,
     '' AS DIA,
     '' AS HORA,
     'SEMANAL' AS VISAO,
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO AS TEVE_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    TEVE_ATUACAO,
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    CAST(WEEK(DATA_CRIACAO, 1) AS CHAR),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    CAST(WEEK(DATA_ENTRADA_N2, 1) AS CHAR),
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO
+    TEVE_ATUACAO
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
     '' AS SEMANA,
-    DATE(DATA_CRIACAO) AS DIA,
+    DATE(DATA_ENTRADA_N2) AS DIA,
     '' AS HORA,
     'DIARIO' AS VISAO,
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO AS TEVE_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    TEVE_ATUACAO AS TEVE_ATUACAO,
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
-WHERE DATA_CRIACAO >= DATE_SUB(
+WHERE DATA_ENTRADA_N2 >= DATE_SUB(
     CURDATE(),
     INTERVAL 31 DAY)
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    DATE(DATA_CRIACAO),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    DATE(DATA_ENTRADA_N2),
     TIPO_BILHETE,
-    CLASSIFICACAO_TEVE_ATUACAO;
+    TEVE_ATUACAO;
     """)
 
     registros = (
@@ -798,6 +852,7 @@ GROUP BY
     ]
 
 
+
 # ---------- ROTA: DASHBOARD VOLUMETRIA USUARIO----------
 # ------- GET /atividade-n2/volumetriausuario
 
@@ -820,56 +875,56 @@ def dashboard_volumetria(
     WHERE USUARIO_ATUACAO IS NOT NULL
 )
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
-    LPAD(CAST(MONTH(DATA_CRIACAO) AS CHAR), 2,'0') AS MES,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
+    LPAD(CAST(MONTH(DATA_ENTRADA_N2) AS CHAR), 2,'0') AS MES,
     '' AS SEMANA,
     '' AS DIA,
     '' AS HORA,
     'ANO_MES' AS VISAO,
     TIPO_BILHETE,
     USUARIO_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    LPAD(CAST(MONTH(DATA_CRIACAO) AS CHAR), 2,'0'),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    LPAD(CAST(MONTH(DATA_ENTRADA_N2) AS CHAR), 2,'0'),
     TIPO_BILHETE,
     USUARIO_ATUACAO
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
-    CAST(WEEK(DATA_CRIACAO, 1) AS CHAR) AS SEMANA,
+    CAST(WEEK(DATA_ENTRADA_N2, 1) AS CHAR) AS SEMANA,
     '' AS DIA,
     '' AS HORA,
     'SEMANAL' AS VISAO,
     TIPO_BILHETE,
     USUARIO_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    CAST(WEEK(DATA_CRIACAO, 1) AS CHAR),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    CAST(WEEK(DATA_ENTRADA_N2, 1) AS CHAR),
     TIPO_BILHETE,
     USUARIO_ATUACAO
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
     '' AS SEMANA,
-    DATE(DATA_CRIACAO) AS DIA,
+    DATE(DATA_ENTRADA_N2) AS DIA,
     '' AS HORA,
     'DIARIO' AS VISAO,
     TIPO_BILHETE,
     USUARIO_ATUACAO,
-    COUNT(DISTINCT ORIGEM) AS TOTAL
+    COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
-WHERE DATA_CRIACAO >= DATE_SUB(
+WHERE DATA_ENTRADA_N2 >= DATE_SUB(
     CURDATE(),
     INTERVAL 31 DAY)
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    DATE(DATA_CRIACAO),
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    DATE(DATA_ENTRADA_N2),
     TIPO_BILHETE,
     USUARIO_ATUACAO
     """)
@@ -916,8 +971,8 @@ WITH ANALITICO AS (
     FROM NOC.TBL_ACOMPANHAMENTO_N2_FECHADO
 )
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
-    LPAD(MONTH(DATA_CRIACAO),2,'0') AS MES,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
+    LPAD(MONTH(DATA_ENTRADA_N2),2,'0') AS MES,
     '' AS SEMANA,
     '' AS DIA,
     'ANO_MES' AS VISAO,
@@ -926,13 +981,13 @@ SELECT
     ) AS TMA_MEDIO
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    LPAD(MONTH(DATA_CRIACAO),2,'0')
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    LPAD(MONTH(DATA_ENTRADA_N2),2,'0')
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
-    CAST(WEEK(DATA_CRIACAO,1) AS CHAR) AS SEMANA,
+    CAST(WEEK(DATA_ENTRADA_N2,1) AS CHAR) AS SEMANA,
     '' AS DIA,
     'SEMANAL' AS VISAO,
     SEC_TO_TIME(
@@ -940,22 +995,25 @@ SELECT
     ) AS TMA_MEDIO
 FROM ANALITICO
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-    CAST(WEEK(DATA_CRIACAO,1) AS CHAR)
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+    CAST(WEEK(DATA_ENTRADA_N2,1) AS CHAR)
 UNION ALL
 SELECT
-    CAST(YEAR(DATA_CRIACAO) AS CHAR) AS ANO,
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
     '' AS MES,
     '' AS SEMANA,
-    DATE(DATA_CRIACAO) AS DIA,
+    DATE(DATA_ENTRADA_N2) AS DIA,
     'DIARIO' AS VISAO,
     SEC_TO_TIME(
         AVG(TIME_TO_SEC(tma_n2))
     ) AS TMA_MEDIO
 FROM ANALITICO
+WHERE DATA_ENTRADA_N2 >= DATE_SUB(
+    CURDATE(),
+    INTERVAL 31 DAY)
 GROUP BY
-    CAST(YEAR(DATA_CRIACAO) AS CHAR),
-DATE(DATA_CRIACAO);
+    CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
+DATE(DATA_ENTRADA_N2);
     """)
 
     registros = (
