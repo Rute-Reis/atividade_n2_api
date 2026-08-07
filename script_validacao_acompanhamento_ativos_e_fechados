@@ -1,3 +1,5 @@
+#----------------- ajuste e rodar -------------------------------#
+
 import oracledb
 import pandas as pd
 import concurrent.futures
@@ -170,7 +172,7 @@ def consulta_por_mes(data_inicio, data_fim):
         return df
 
 # Período total
-data_inicio = datetime(2025, 1, 1)
+data_inicio = datetime(2026, 7, 1)
 data_atual = datetime.now()
 # data_atual = datetime(2026, 7, 11)
 # Intervalos diários
@@ -311,25 +313,11 @@ INICIO_ATUACAO AS (
         B.*,
         CASE
             WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-                 AND (
-                        B.USUARIO_ANTERIOR IS NULL
-                        OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
+                 AND (B.USUARIO_ANTERIOR IS NULL
+                      	OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
             THEN 1
             ELSE 0
-        END AS INICIO_ATUACAO,
-        CASE
-            WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-                 AND (
-                        B.USUARIO_ANTERIOR IS NULL
-                        OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
-            THEN 1
-            ELSE 0
-        END AS CONTAR_ATUACAO,
-        CASE
-            WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NULL
-            THEN 1
-            ELSE 0
-        END AS CONTAR_SEM_ATUACAO
+        END AS INICIO_ATUACAO
     FROM BASE_LAG B
 ),
 ATUACAO_RESUMO AS (
@@ -348,8 +336,6 @@ SELECT
     B.TEVE_ATUACAO,
     B.AINDA_NA_FILA,
     B.INICIO_ATUACAO,
-    B.CONTAR_ATUACAO,
-    B.CONTAR_SEM_ATUACAO,
     TRUNC(B.TOTAL_SEGUNDOS / 3600)|| ':' ||
 	LPAD(TRUNC(MOD(B.TOTAL_SEGUNDOS, 3600) / 60), 2,'0')|| ':' ||
 	LPAD(MOD(B.TOTAL_SEGUNDOS, 60), 2, '0') AS TEMPO_NO_GRUPO,
@@ -414,6 +400,9 @@ duplicadas = (
     .sort_values("qtd", ascending=False)
 )
 
+display(
+    duplicadas.head(20)
+)
 
 
 print("N2")
@@ -459,11 +448,6 @@ n2_consolidado_ativos
 n2_consolidado_ativos.to_sql(name='TBL_ACOMPANHAMENTO_N2_ATIVOS', con=engine_noc,if_exists='replace', index=False)
 
 
-with engine_noc.connect() as connection:
-    setAtualizacao = text("UPDATE NOC.TBL_UPDATE_SCRIPTS SET DATA_UPDATE = DATE_FORMAT(NOW(), '%d-%m-%Y %H:%i') WHERE NOME_SCRIPT = 'ACOMPANHAMENTO_N2'")
-    connection.execute(setAtualizacao)
-    connection.commit()
-
 
 # #OTIMIZAÇÃO DE EXECUÇÃO DO SELECT PARA PEGAR PERIODOS
 # from datetime import datetime, timedelta
@@ -480,7 +464,7 @@ with engine_noc.connect() as connection:
 #===========================================================================================================================================================
 
 # Período total
-data_inicio = datetime(2025, 1, 1)
+data_inicio = datetime(2026, 7, 1)
 data_atual = datetime.now()
 # data_atual = datetime(2026, 7, 11)
 # Intervalos diários
@@ -610,7 +594,7 @@ def consulta_por_mes(data_inicio, data_fim):
     AND TA.TQA_TIPO_REDE IN ('701')
     -- AND TA.TQA_CODIGO IN ('358333914', '358338454', '358326681')
     AND TA.TQA_STATUS IN ('90')
-    AND TA.TQA_DATA_CRIACAO >= TO_DATE('2025-01-01','YYYY-MM-DD')
+    AND TA.TQA_DATA_CRIACAO >= TO_DATE('2026-07-01','YYYY-MM-DD')
     AND TA.TQA_DATA_ENCERRAMENTO > TO_DATE(:data_inicio, 'YYYY-MM-DD HH24:MI:SS') --sempre manter essa parte
     AND TA.TQA_DATA_ENCERRAMENTO <=  TO_DATE(:data_fim,    'YYYY-MM-DD HH24:MI:SS') --sempre manter essa parte
         """)
@@ -659,36 +643,24 @@ def query_chunk(ta_chunk):
 
     n2_bloqueio_sql = f"""
     WITH BASE_N2 AS (
-    SELECT 
-        V.VDA_TA AS ORIGEM,
-        G.GRP_NOME AS GRUPO_N2,
-        U.USR_NOME AS USUARIO_ATUACAO,
-        V.VDA_RESPONSAVELPOR_USUARIO,
-        V.VDA_DATA_INITIAL AS DATA_ENTRADA_N2,
-        V.VDA_DATA_FINAL AS DATA_SAIDA_N2,
-        CASE
-            WHEN V.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-            THEN 'SIM'
-            ELSE 'NAO'
-        END AS TEVE_ATUACAO,
-        CASE
-            WHEN V.VDA_DATA_FINAL IS NULL
-            THEN 'SIM'
-            ELSE 'NAO'
-        END AS AINDA_NA_FILA,
-        ROUND(
-            (
-                COALESCE(
-                    V.VDA_DATA_FINAL,
-                    SYSDATE
-                )
-                -
-                V.VDA_DATA_INITIAL
-            ) * 86400
-        ) AS TOTAL_SEGUNDOS,
-        CASE
-            WHEN V.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-            THEN ROUND(
+        SELECT
+            V.VDA_TA AS ORIGEM,
+            G.GRP_NOME AS GRUPO_N2,
+            U.USR_NOME AS USUARIO_ATUACAO,
+            V.VDA_RESPONSAVELPOR_USUARIO,
+            V.VDA_DATA_INITIAL AS DATA_ENTRADA_N2,
+            V.VDA_DATA_FINAL AS DATA_SAIDA_N2,
+            CASE
+                WHEN V.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
+                THEN 'SIM'
+                ELSE 'NAO'
+            END AS TEVE_ATUACAO,
+            CASE
+                WHEN V.VDA_DATA_FINAL IS NULL
+                THEN 'SIM'
+                ELSE 'NAO'
+            END AS AINDA_NA_FILA,
+            ROUND(
                 (
                     COALESCE(
                         V.VDA_DATA_FINAL,
@@ -697,103 +669,99 @@ def query_chunk(ta_chunk):
                     -
                     V.VDA_DATA_INITIAL
                 ) * 86400
-            )
-            ELSE 0
-        END AS TOTAL_SEGUNDOS_ATUACAO
-    FROM SIGITM3.TBL_TA_VIDA V
-    LEFT JOIN SIGITM3.TBL_GRUPOS G
-        ON G.GRP_CODIGO = V.VDA_RESPONSAVELPOR_GRUPO
-    LEFT JOIN SIGITM3.TBL_USUARIOS U
-        ON U.USR_CODIGO = V.VDA_RESPONSAVELPOR_USUARIO
-    WHERE V.VDA_TA IN ({ta_list_str})
-      AND V.VDA_RESPONSAVELPOR_GRUPO IN (
-            6611,
-            6612
-      )
-),
-BASE_LAG AS (
+            ) AS TOTAL_SEGUNDOS,
+            CASE
+                WHEN V.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
+                THEN ROUND(
+                    (
+                        COALESCE(
+                            V.VDA_DATA_FINAL,
+                            SYSDATE
+                        )
+                        -
+                        V.VDA_DATA_INITIAL
+                    ) * 86400
+                )
+                ELSE 0
+            END AS TOTAL_SEGUNDOS_ATUACAO
+        FROM SIGITM3.TBL_TA_VIDA V
+        LEFT JOIN SIGITM3.TBL_GRUPOS G
+            ON G.GRP_CODIGO = V.VDA_RESPONSAVELPOR_GRUPO
+        LEFT JOIN SIGITM3.TBL_USUARIOS U
+            ON U.USR_CODIGO = V.VDA_RESPONSAVELPOR_USUARIO
+        WHERE V.VDA_TA IN ({ta_list_str})
+          AND V.VDA_RESPONSAVELPOR_GRUPO IN (
+                6611,
+                6612
+          )
+    ),
+    BASE_LAG AS (
+        SELECT
+            B.*,
+            LAG(
+                B.VDA_RESPONSAVELPOR_USUARIO
+            ) OVER (
+                PARTITION BY B.ORIGEM
+                ORDER BY B.DATA_ENTRADA_N2
+            ) AS USUARIO_ANTERIOR
+        FROM BASE_N2 B
+    ),
+    INICIO_ATUACAO AS (
+        SELECT
+            B.*,
+            CASE
+                WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
+                     AND (B.USUARIO_ANTERIOR IS NULL
+                            OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
+                THEN 1
+                ELSE 0
+            END AS INICIO_ATUACAO
+        FROM BASE_LAG B
+    ),
+    ATUACAO_RESUMO AS (
+        SELECT
+            ORIGEM,
+            SUM(INICIO_ATUACAO) AS QUANTIDADE_ATUACAO
+        FROM INICIO_ATUACAO
+        GROUP BY ORIGEM
+    )
     SELECT
-        B.*,
-        LAG(
-            B.VDA_RESPONSAVELPOR_USUARIO
-        ) OVER (
-            PARTITION BY B.ORIGEM
-            ORDER BY B.DATA_ENTRADA_N2
-        ) AS USUARIO_ANTERIOR
-    FROM BASE_N2 B
-),
-INICIO_ATUACAO AS (
-    SELECT
-        B.*,
+        B.ORIGEM,
+        B.GRUPO_N2,
+        B.USUARIO_ATUACAO,
+        B.DATA_ENTRADA_N2,
+        B.DATA_SAIDA_N2,
+        B.TEVE_ATUACAO,
+        B.AINDA_NA_FILA,
+        B.INICIO_ATUACAO,
+        TRUNC(B.TOTAL_SEGUNDOS / 3600)|| ':' ||
+        LPAD(TRUNC(MOD(B.TOTAL_SEGUNDOS, 3600) / 60), 2,'0')|| ':' ||
+        LPAD(MOD(B.TOTAL_SEGUNDOS, 60), 2, '0') AS TEMPO_NO_GRUPO,
+        TRUNC(B.TOTAL_SEGUNDOS / 3600)|| ':' ||
+        LPAD(TRUNC(MOD(B.TOTAL_SEGUNDOS, 3600) / 60), 2,'0')|| ':' ||
+        LPAD(MOD(B.TOTAL_SEGUNDOS, 60), 2, '0') AS TMA_N2,
         CASE
-            WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-                 AND (
-                        B.USUARIO_ANTERIOR IS NULL
-                        OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
-            THEN 1
-            ELSE 0
-        END AS INICIO_ATUACAO,
+        WHEN B.TEVE_ATUACAO = 'SIM'
+        THEN
+            TRUNC(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM) / 3600)|| ':' ||
+            LPAD( TRUNC(MOD(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM), 3600) / 60), 2,'0')|| ':' ||
+            LPAD(MOD(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM), 60), 2, '0')
+        ELSE NULL
+    END AS TEMPO_TOTAL_ATUACAO,
         CASE
-            WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NOT NULL
-                 AND (
-                        B.USUARIO_ANTERIOR IS NULL
-                        OR B.USUARIO_ANTERIOR <> B.VDA_RESPONSAVELPOR_USUARIO)
-            THEN 1
-            ELSE 0
-        END AS CONTAR_ATUACAO,
-        CASE
-            WHEN B.VDA_RESPONSAVELPOR_USUARIO IS NULL
-            THEN 1
-            ELSE 0
-        END AS CONTAR_SEM_ATUACAO
-    FROM BASE_LAG B
-),
-ATUACAO_RESUMO AS (
-    SELECT
-        ORIGEM,
-        SUM(INICIO_ATUACAO) AS QUANTIDADE_ATUACAO
-    FROM INICIO_ATUACAO
-    GROUP BY ORIGEM
-)
-SELECT
-    B.ORIGEM,
-    B.GRUPO_N2,
-    B.USUARIO_ATUACAO,
-    B.DATA_ENTRADA_N2,
-    B.DATA_SAIDA_N2,
-    B.TEVE_ATUACAO,
-    B.AINDA_NA_FILA,
-    B.INICIO_ATUACAO,
-    B.CONTAR_ATUACAO,
-    B.CONTAR_SEM_ATUACAO,
-    TRUNC(B.TOTAL_SEGUNDOS / 3600)|| ':' ||
-	LPAD(TRUNC(MOD(B.TOTAL_SEGUNDOS, 3600) / 60), 2,'0')|| ':' ||
-	LPAD(MOD(B.TOTAL_SEGUNDOS, 60), 2, '0') AS TEMPO_NO_GRUPO,
-	TRUNC(B.TOTAL_SEGUNDOS / 3600)|| ':' ||
-	LPAD(TRUNC(MOD(B.TOTAL_SEGUNDOS, 3600) / 60), 2,'0')|| ':' ||
-	LPAD(MOD(B.TOTAL_SEGUNDOS, 60), 2, '0') AS TMA_N2,
-    CASE
-    WHEN B.TEVE_ATUACAO = 'SIM'
-    THEN
-        TRUNC(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM) / 3600)|| ':' ||
-        LPAD( TRUNC(MOD(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM), 3600) / 60), 2,'0')|| ':' ||
-        LPAD(MOD(SUM(B.TOTAL_SEGUNDOS_ATUACAO)OVER (PARTITION BY B.ORIGEM), 60), 2, '0')
-    ELSE NULL
-END AS TEMPO_TOTAL_ATUACAO,
-    CASE
-    WHEN B.TEVE_ATUACAO = 'SIM'
-    THEN A.QUANTIDADE_ATUACAO
-    ELSE NULL
-END AS QUANTIDADE_ATUACAO,
-    TRUNC(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM) / 3600)|| ':' ||
-    LPAD(TRUNC(MOD(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM), 3600) / 60), 2, '0')|| ':' ||
-    LPAD(MOD(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM), 60),2,'0') AS TEMPO_TOTAL_N2
-FROM INICIO_ATUACAO B
-LEFT JOIN ATUACAO_RESUMO A
-    ON A.ORIGEM = B.ORIGEM
-ORDER BY
-    B.ORIGEM,
-    B.DATA_ENTRADA_N2
+        WHEN B.TEVE_ATUACAO = 'SIM'
+        THEN A.QUANTIDADE_ATUACAO
+        ELSE NULL
+    END AS QUANTIDADE_ATUACAO,
+        TRUNC(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM) / 3600)|| ':' ||
+        LPAD(TRUNC(MOD(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM), 3600) / 60), 2, '0')|| ':' ||
+        LPAD(MOD(SUM(B.TOTAL_SEGUNDOS) OVER (PARTITION BY B.ORIGEM), 60),2,'0') AS TEMPO_TOTAL_N2
+    FROM INICIO_ATUACAO B
+    LEFT JOIN ATUACAO_RESUMO A
+        ON A.ORIGEM = B.ORIGEM
+    ORDER BY
+        B.ORIGEM,
+        B.DATA_ENTRADA_N2
     """
 
     try:
@@ -833,9 +801,9 @@ duplicadas = (
     .sort_values("qtd", ascending=False)
 )
 
-# display(
-#     duplicadas.head(20)
-# )
+display(
+    duplicadas.head(20)
+)
 
 
 print(
@@ -889,5 +857,3 @@ n2_consolidado_fechados
 # n2_consolidado_fechados.to_excel("ACOMPANHAMENTO_N2_v3.xlsx", index=False)
 
 n2_consolidado_fechados.to_sql(name='TBL_ACOMPANHAMENTO_N2_FECHADO', con=engine_noc,if_exists='replace', index=False)
-
-
