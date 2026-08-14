@@ -649,16 +649,39 @@ def listar_ta_fechados(
 
 
 
-# ---------- ROTA: TA UNIFICADO (não detalhado) ----------
+# ---------- ROTA: TA UNIFICADO - Download (não detalhado) ----------
 # ------- GET /atividade-n2/ta-ativos-fechados
-
 @router.get(
-    "/ta-ativos-fechados"
+    "/ta-ativos-fechados",
+    response_model=List[schemas.TAUnificadoDownload]
 )
 def listar_ta_unificado(
-    ano: int = Query(..., description="Ano obrigatório"),
-    mes: Optional[int] = Query(None, ge=1, le=12),
-    dia: Optional[int] = Query(None, ge=1, le=31),
+    ano: int = Query(
+        ...,
+        description="Ano obrigatório"
+    ),
+
+    mes: Optional[int] = Query(
+        None,
+        ge=1,
+        le=12,
+        description="Mês opcional"
+    ),
+
+    dia: Optional[int] = Query(
+        None,
+        ge=1,
+        le=31,
+        description="Dia opcional"
+    ),
+
+    semana: Optional[int] = Query(
+        None,
+        ge=1,
+        le=53,
+        description="Semana opcional"
+    ),
+
     db: Session = Depends(get_db)
 ):
 
@@ -671,21 +694,33 @@ def listar_ta_unificado(
     }
 
     if mes is not None:
+
         filtros.append(
             "MONTH(data_entrada_n2) = :mes"
         )
+
         params["mes"] = mes
 
     if dia is not None:
+
         filtros.append(
             "DAY(data_entrada_n2) = :dia"
         )
+
         params["dia"] = dia
+
+    if semana is not None:
+
+        filtros.append(
+            "WEEK(data_entrada_n2, 1) = :semana"
+        )
+
+        params["semana"] = semana
 
     where_clause = " AND ".join(filtros)
 
     dados_query = text(f"""
-        SELECT
+        SELECT DISTINCT
             origem,
             ta_raiz,
             status,
@@ -716,23 +751,17 @@ def listar_ta_unificado(
             tempo_total_n2,
             origem_tabela
         FROM (
-
-            SELECT
+            SELECT 
                 *,
                 'ATIVO' AS origem_tabela
             FROM TBL_ACOMPANHAMENTO_N2_ATIVOS
-
             UNION ALL
-
-            SELECT
+            SELECT 
                 *,
                 'FECHADO' AS origem_tabela
             FROM TBL_ACOMPANHAMENTO_N2_FECHADO
-
         ) t
-
         WHERE {where_clause}
-
         ORDER BY data_entrada_n2 DESC
     """)
 
@@ -751,11 +780,13 @@ def listar_ta_unificado(
     ]
 #buscar por ano: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026
 #buscar por mês específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026&mes=7
+#buscar por semana específica: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026&semana=28
 #buscar por dia específico: https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados?ano=2026&mes=7&dia=15
 
 
 
-# # ---------- ROTA: TA UNIFICADO (detalhado dia-mes-ano ----------
+
+# # ---------- ROTA: TA UNIFICADO - Download (detalhado dia-mes-ano ----------
 # # ------- GET https://10.126.112.251:9001/atividade-n2/ta-ativos-fechados
 # @router.get(
 #     "/ta-ativos-fechados"
@@ -897,12 +928,14 @@ def dashboard_volumetria(
 ):
 
     query = text("""
-            WITH ANALITICO AS (
+    WITH ANALITICO AS (
     SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_ATIVOS
+    WHERE classificacao_atuacao <> 'VAZIO'
     UNION ALL
     SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_FECHADO
+    WHERE classificacao_atuacao <> 'VAZIO'
 )
 SELECT
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
@@ -912,14 +945,14 @@ SELECT
     '' AS HORA,
     'ANO_MES' AS VISAO,
     TIPO_BILHETE,
-    TEVE_ATUACAO,
+    classificacao_atuacao AS TEVE_ATUACAO,
     COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
     LPAD(CAST(MONTH(DATA_ENTRADA_N2) AS CHAR), 2,'0'),
     TIPO_BILHETE,
-    TEVE_ATUACAO
+    classificacao_atuacao
 UNION ALL
 SELECT
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
@@ -929,14 +962,14 @@ SELECT
     '' AS HORA,
     'SEMANAL' AS VISAO,
     TIPO_BILHETE,
-    TEVE_ATUACAO,
+    classificacao_atuacao AS TEVE_ATUACAO,
     COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 GROUP BY
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
     CAST(WEEK(DATA_ENTRADA_N2, 1) AS CHAR),
     TIPO_BILHETE,
-    TEVE_ATUACAO
+    classificacao_atuacao
 UNION ALL
 SELECT
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
@@ -946,7 +979,7 @@ SELECT
     '' AS HORA,
     'DIARIO' AS VISAO,
     TIPO_BILHETE,
-    TEVE_ATUACAO AS TEVE_ATUACAO,
+    classificacao_atuacao AS TEVE_ATUACAO,
     COUNT(DISTINCT CONCAT(ORIGEM, '|', DATA_ENTRADA_N2)) AS TOTAL
 FROM ANALITICO
 WHERE DATA_ENTRADA_N2 >= DATE_SUB(
@@ -956,7 +989,7 @@ GROUP BY
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
     DATE(DATA_ENTRADA_N2),
     TIPO_BILHETE,
-    TEVE_ATUACAO;
+    classificacao_atuacao;
     """)
 
     registros = (
@@ -994,14 +1027,16 @@ def dashboard_volumetria(
 ):
 
     query = text("""
-                   WITH ANALITICO AS (
+    WITH ANALITICO AS (
     SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_ATIVOS
     WHERE USUARIO_ATUACAO IS NOT NULL
+    AND classificacao_atuacao <> 'VAZIO'
     UNION ALL
     SELECT *
     FROM NOC.TBL_ACOMPANHAMENTO_N2_FECHADO
     WHERE USUARIO_ATUACAO IS NOT NULL
+    AND classificacao_atuacao <> 'VAZIO'
 )
 SELECT
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR) AS ANO,
@@ -1055,7 +1090,7 @@ GROUP BY
     CAST(YEAR(DATA_ENTRADA_N2) AS CHAR),
     DATE(DATA_ENTRADA_N2),
     TIPO_BILHETE,
-    USUARIO_ATUACAO
+    USUARIO_ATUACAO;
     """)
 
     registros = (
